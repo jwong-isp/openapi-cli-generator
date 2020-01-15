@@ -45,6 +45,68 @@ func ProfileListKeys(keys ...string) func(*CredentialsFile) error {
 	}
 }
 
+// AuthScheme Interface for authentication schemes
+type AuthScheme interface {
+	Args() []string
+	Run()
+}
+
+// PKCE struct for the pkce authentication flow
+type PKCE struct {
+	clientID       string
+	issuerEndpoint string
+}
+
+func (p PKCE) Args() []string {
+	return []string{"identifier", "audience", "user_identity"}
+}
+
+func RegisterAuth(scheme AuthScheme) {
+	// Setup a credentials file, kept separate from configuration which might
+	// get checked into source control.
+	Creds = &CredentialsFile{viper.New(), []string{}, []string{}}
+	Creds.keys = scheme.Args()
+
+	Creds.AddConfigPath("$HOME/." + viper.GetString("app-name") + "/")
+	Creds.ReadInConfig() // TODO: Why read in the config at this point?
+
+	// Register a new `--profile` flag.
+	AddGlobalFlag("profile", "", "Credentials profile to use for authentication", "default")
+
+	// Register auth management commands to create and list profiles.
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Authentication settings",
+	}
+	Root.AddCommand(cmd)
+
+	use := "add-profile [flags] <name>"
+	for _, name := range Creds.keys {
+		use += " <" + strings.Replace(name, "_", "-", -1) + ">"
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:     use,
+		Aliases: []string{"add"},
+		Short:   "Add a new named authentication profile",
+		Args:    cobra.ExactArgs(1 + len(Creds.keys)),
+		Run: func(cmd *cobra.Command, args []string) {
+			for i, key := range Creds.keys {
+				// Replace periods in the name since Viper will create nested structures
+				// in the config and this isn't what we want!
+				name := strings.Replace(args[0], ".", "-", -1)
+
+				Creds.Set("profiles."+name+"."+strings.Replace(key, "-", "_", -1), args[i+1])
+			}
+
+			filename := path.Join(viper.GetString("config-directory"), "credentials.json")
+			if err := Creds.WriteConfigAs(filename); err != nil {
+				panic(err)
+			}
+		},
+	})
+}
+
 // InitCredentials sets up the profile/auth commands. Must be called *after* you
 // have called `cli.Init()`.
 //

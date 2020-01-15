@@ -1,4 +1,4 @@
-# User
+# User(pkce)
 hard-coded:
 - client ID (from Auth0)
 - issuer endpoint (from Auth0, e.g. `https://istreamplanet.auth0.com/`)
